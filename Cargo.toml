@@ -1,0 +1,12 @@
+[package]
+name = "cosmic-applet-caffeine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+i18n-embed = { version = "0.16.0", features = ["fluent-system"] }
+i18n-embed-fl = "0.10.1"
+libcosmic = { git = "https://github.com/pop-os/libcosmic", version = "1.0.0", features = ["a11y", "applet", "dbus-config"], default-features = false }
+rust-embed = "8.12.0"
+tokio = "1.53.1"
+zbus = { version = "5.19.0", default-features = false, features = ["blocking-api", "tokio"] }
