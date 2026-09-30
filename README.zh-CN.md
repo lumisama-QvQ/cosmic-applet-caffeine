@@ -6,6 +6,8 @@
 它通过 freedesktop 的 `org.freedesktop.ScreenSaver` D-Bus 接口持有一个空闲抑制
 （idle inhibitor），让屏幕保持唤醒。
 
+![cosmic-applet-caffeine 在 COSMIC 面板中的效果](assets/Screenshot/locklike.png)
+
 ## 功能
 
 - **点击切换** —— 左键点击面板图标，开/关咖啡因。
@@ -14,6 +16,7 @@
 - **状态图标** —— 通过图标显示当前状态：满杯表示已生效，空杯表示未生效。
 - **错误提示** —— D-Bus 操作失败时弹出桌面通知并写入 stderr。
 - **多语言** —— 内置英文与简体中文。
+- **原生外观** —— 与 COSMIC 官方 applet 使用相同的主题自适应外观，保证与面板外观的一致性。
 
 ## 工作原理
 

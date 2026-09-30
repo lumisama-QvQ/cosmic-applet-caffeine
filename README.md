@@ -6,6 +6,8 @@ A simple "caffeine" applet for the [COSMIC](https://system76.com/cosmic) desktop
 It keeps your screen awake by holding an idle inhibitor through the freedesktop
 `org.freedesktop.ScreenSaver` D-Bus interface.
 
+![cosmic-applet-caffeine in the COSMIC panel](assets/Screenshot/locklike.png)
+
 ## Features
 
 - **Toggle with a click** — left-click the panel icon to turn caffeine on or off.
@@ -18,6 +20,8 @@ It keeps your screen awake by holding an idle inhibitor through the freedesktop
 - **Error feedback** — shows a desktop notification and logs to stderr when a
   D-Bus operation fails.
 - **Localized** — English and Simplified Chinese included.
+- **Native look** — uses the same theme-adaptive styling as the official COSMIC
+  applets, keeping it visually consistent with the panel.
 
 ## How it works
 
