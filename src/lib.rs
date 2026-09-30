@@ -3,7 +3,6 @@ mod localize;
 
 use cosmic::{
     applet::menu_button,
-    cctk::sctk::primary_selection::selection,
     iced::{Alignment, Length, Task, core::time, task, window::Id},
     prelude::*,
     widget::{column, container, icon, mouse_area, row, space, text},

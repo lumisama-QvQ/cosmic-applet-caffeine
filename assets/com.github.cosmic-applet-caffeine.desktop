@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Caffeine
+Comment=Prevent the screen from going to sleep
+Type=Application
+Exec=cosmic-applet-caffeine
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Caffeine;
+Icon=caffeine-cup-full
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-OverflowPriority=10
