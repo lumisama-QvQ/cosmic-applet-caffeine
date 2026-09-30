@@ -3,6 +3,7 @@ mod localize;
 
 use cosmic::{
     applet::menu_button,
+    cctk::sctk::primary_selection::selection,
     iced::{Alignment, Length, Task, core::time, task, window::Id},
     prelude::*,
     widget::{column, container, icon, mouse_area, row, space, text},
@@ -142,36 +143,40 @@ impl cosmic::Application for Applet {
                 Task::none()
             }
             Message::LockTime(minutes) => {
-                self.times = minutes;
                 if let Some(handle) = self.timer_handle.take() {
                     handle.abort();
                 }
-                match minutes {
-                    None => {
-                        self.times.take();
-                        if self.lock_state == LockState::Unlocked {
-                            Task::done(Message::LockSwitch).map(cosmic::Action::from)
-                        } else {
-                            Task::none()
+                if minutes == self.times && self.lock_state == LockState::Locked {
+                    Task::done(Message::LockSwitch).map(cosmic::Action::from)
+                } else {
+                    self.times = minutes;
+                    match minutes {
+                        None => {
+                            self.times.take();
+                            if self.lock_state == LockState::Unlocked {
+                                Task::done(Message::LockSwitch).map(cosmic::Action::from)
+                            } else {
+                                Task::none()
+                            }
                         }
-                    }
-                    Some(mintues) => {
-                        self.times = Some(mintues);
-                        let (task, handle) = Task::perform(
-                            async move {
-                                tokio::time::sleep(time::minutes(mintues as u64)).await;
-                            },
-                            |_| Message::LockSwitch,
-                        )
-                        .map(cosmic::Action::from)
-                        .abortable();
-                        self.timer_handle = Some(handle);
-                        if self.lock_state == LockState::Locked {
-                            task
-                        } else {
-                            Task::done(Message::LockSwitch)
-                                .map(cosmic::Action::from)
-                                .chain(task)
+                        Some(mintues) => {
+                            self.times = Some(mintues);
+                            let (task, handle) = Task::perform(
+                                async move {
+                                    tokio::time::sleep(time::minutes(mintues as u64)).await;
+                                },
+                                |_| Message::LockSwitch,
+                            )
+                            .map(cosmic::Action::from)
+                            .abortable();
+                            self.timer_handle = Some(handle);
+                            if self.lock_state == LockState::Locked {
+                                task
+                            } else {
+                                Task::done(Message::LockSwitch)
+                                    .map(cosmic::Action::from)
+                                    .chain(task)
+                            }
                         }
                     }
                 }
