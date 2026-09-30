@@ -8,14 +8,12 @@ use cosmic::{
     widget::{column, container, icon, mouse_area, row, space, text},
 };
 use dbus::*;
-use std::sync::{Arc, Mutex};
 
 struct Applet {
     core: cosmic::Core,
-    is_active: bool,
     timer_handle: Option<task::Handle>,
     lock_state: LockState,
-    dbus_connection: Arc<Mutex<Option<zbus::Connection>>>,
+    dbus_connection: Option<zbus::Connection>,
     times: Option<usize>,
     popup_id: Option<Id>,
 }
@@ -25,26 +23,34 @@ enum Message {
     LockSwitch,
     PopupClosed(Id),
     PopupToggle,
-    Locked,
-    AppError,
+    Locked(zbus::Connection),
+    AppError(String),
     LockTime(Option<usize>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum LockState {
     Unlocked,
     Acquiring,
     Locked,
 }
 
-impl PartialEq for LockState {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (LockState::Unlocked, LockState::Unlocked)
-                | (LockState::Acquiring, LockState::Acquiring)
-                | (LockState::Locked, LockState::Locked)
-        )
+impl Applet {
+    fn is_locked(&self) -> bool {
+        self.lock_state == LockState::Locked
+    }
+
+    fn cancel_timer(&mut self) {
+        if let Some(handle) = self.timer_handle.take() {
+            handle.abort();
+        }
+    }
+
+    fn unlock(&mut self) {
+        self.cancel_timer();
+        self.lock_state = LockState::Unlocked;
+        self.times = None;
+        self.dbus_connection.take();
     }
 }
 
@@ -64,14 +70,12 @@ impl cosmic::Application for Applet {
     }
 
     fn init(core: cosmic::Core, _flags: Self::Flags) -> (Self, cosmic::app::Task<Self::Message>) {
-        //TODO:需要添加错误处理
         (
             Self {
                 core,
-                is_active: false,
                 timer_handle: None,
                 lock_state: LockState::Unlocked,
-                dbus_connection: Arc::new(Mutex::new(None)),
+                dbus_connection: None,
                 times: None,
                 popup_id: None,
             },
@@ -88,27 +92,34 @@ impl cosmic::Application for Applet {
                         Task::none()
                     }
                     LockState::Locked => {
-                        self.dbus_connection.lock().unwrap().take();
-                        self.lock_state = LockState::Unlocked;
-                        self.is_active = false;
+                        self.unlock();
                         Task::none()
                     }
                     LockState::Unlocked => {
                         self.lock_state = LockState::Acquiring;
-                        let dbus_connection = self.dbus_connection.clone();
-                        //需要错误处理
                         Task::perform(
                             async move {
-                                let connection = create_dbus_connection().await.unwrap();
-                                apply_inhibit(&connection).await.unwrap();
-                                *dbus_connection.lock().unwrap() = Some(connection);
+                                let connection = create_dbus_connection().await?;
+                                apply_inhibit(&connection).await?;
+                                Ok::<zbus::Connection, anyhow::Error>(connection)
                             },
-                            |_| cosmic::Action::from(Message::Locked),
+                            |res| match res {
+                                Ok(conn) => Message::Locked(conn).into(),
+                                Err(err) => Message::AppError(err.to_string()).into(),
+                            },
                         )
                     }
                 }
             }
-            Message::AppError => Task::none(),
+            Message::AppError(error) => {
+                self.unlock();
+                eprintln!("Caffeine Applet Error: {error}");
+                let _ = notify_rust::Notification::new()
+                    .summary("Caffeine Applet Error")
+                    .body(&error)
+                    .show();
+                Task::none()
+            }
             Message::PopupClosed(id) => {
                 if self.popup_id == Some(id) {
                     self.popup_id = None;
@@ -125,7 +136,10 @@ impl cosmic::Application for Applet {
                             let new_id = Id::unique();
                             applet.popup_id.replace(new_id);
                             applet.core.applet.get_popup_settings(
-                                applet.core.main_window_id().unwrap(),
+                                applet
+                                    .core
+                                    .main_window_id()
+                                    .expect("Main window should exist"),
                                 new_id,
                                 None,
                                 None,
@@ -136,45 +150,39 @@ impl cosmic::Application for Applet {
                     ))
                 }
             }
-            Message::Locked => {
+            Message::Locked(conn) => {
+                self.dbus_connection = Some(conn);
                 self.lock_state = LockState::Locked;
-                self.is_active = true;
                 Task::none()
             }
             Message::LockTime(minutes) => {
-                if let Some(handle) = self.timer_handle.take() {
-                    handle.abort();
-                }
                 if minutes == self.times && self.lock_state == LockState::Locked {
-                    Task::done(Message::LockSwitch).map(cosmic::Action::from)
+                    self.unlock();
+                    Task::none()
                 } else {
+                    self.cancel_timer();
                     self.times = minutes;
                     match minutes {
                         None => {
-                            self.times.take();
                             if self.lock_state == LockState::Unlocked {
-                                Task::done(Message::LockSwitch).map(cosmic::Action::from)
+                                Task::done(Message::LockSwitch.into())
                             } else {
                                 Task::none()
                             }
                         }
-                        Some(mintues) => {
-                            self.times = Some(mintues);
+                        Some(min) => {
                             let (task, handle) = Task::perform(
                                 async move {
-                                    tokio::time::sleep(time::minutes(mintues as u64)).await;
+                                    tokio::time::sleep(time::minutes(min as u64)).await;
                                 },
-                                |_| Message::LockSwitch,
+                                |_| Message::LockSwitch.into(),
                             )
-                            .map(cosmic::Action::from)
                             .abortable();
                             self.timer_handle = Some(handle);
                             if self.lock_state == LockState::Locked {
                                 task
                             } else {
-                                Task::done(Message::LockSwitch)
-                                    .map(cosmic::Action::from)
-                                    .chain(task)
+                                Task::done(Message::LockSwitch.into()).chain(task)
                             }
                         }
                     }
@@ -184,7 +192,7 @@ impl cosmic::Application for Applet {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let icon_name = if self.is_active {
+        let icon_name = if self.is_locked() {
             "caffeine-cup-full"
         } else {
             "caffeine-cup-empty"
@@ -212,7 +220,7 @@ impl cosmic::Application for Applet {
                 time_options
                     .into_iter()
                     .map(|(minutes, label)| {
-                        let is_selected = self.times == minutes && self.is_active;
+                        let is_selected = self.times == minutes && self.is_locked();
                         menu_button(
                             row![
                                 column![text::body(label)].width(Length::Fill),

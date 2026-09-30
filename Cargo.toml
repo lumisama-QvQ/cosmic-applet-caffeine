@@ -1,17 +1,19 @@
 [package]
 name = "cosmic-applet-caffeine"
-version = "0.1.0+alpha"
+version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "A simple caffeine applet for Cosmic Desktop"
 
 [dependencies]
-i18n-embed = { version = "0.16.0", features = ["fluent-system"] }
+anyhow = { version = "1.0.104", default-features = false }
+i18n-embed = { version = "0.16.0", default-features = false }
 i18n-embed-fl = "0.10.1"
-libcosmic = { git = "https://github.com/pop-os/libcosmic", version = "1.0.0", features = ["a11y", "applet", "dbus-config"], default-features = false }
+libcosmic = { git = "https://github.com/pop-os/libcosmic", version = "1.0.0", features = ["a11y", "applet"], default-features = false }
+notify-rust = "4.18.1"
 rust-embed = "8.12.0"
 tokio = "1.53.1"
-zbus = { version = "5.19.0", default-features = false, features = ["blocking-api", "tokio"] }
+zbus = { version = "5.19.0", default-features = false }
 
 [profile.release]
 opt-level = "s"
@@ -20,6 +22,7 @@ lto = true
 panic = "abort"
 
 [package.metadata.generate-rpm]
+version = "0.1.0"
 assets = [
     {source = "target/release/cosmic-applet-caffeine", dest = "/usr/bin/cosmic-applet-caffeine", mode = "755"},
     {source = "assets/com.github.cosmic-applet-caffeine.desktop", dest = "/usr/share/applications/com.github.cosmic-applet-caffeine.desktop", mode = "644"},
