@@ -1,9 +1,17 @@
 mod dbus;
 mod localize;
 
+use std::future::pending;
+
 use cosmic::{
     applet::menu_button,
-    iced::{Alignment, Length, Task, core::time, task, window::Id},
+    iced::{
+        Alignment, Length, Subscription, Task,
+        core::time,
+        futures::{SinkExt, StreamExt},
+        stream, task,
+        window::Id,
+    },
     prelude::*,
     widget::{column, container, icon, mouse_area, row, space, text},
 };
@@ -22,6 +30,7 @@ struct Applet {
 enum Message {
     LockSwitch,
     PopupClosed(Id),
+    Unlock,
     PopupToggle,
     Locked(zbus::Connection),
     AppError(String),
@@ -111,13 +120,17 @@ impl cosmic::Application for Applet {
                     }
                 }
             }
+            Message::Unlock => {
+                self.unlock();
+                Task::none()
+            }
             Message::AppError(error) => {
                 self.unlock();
                 eprintln!("Caffeine Applet Error: {error}");
                 let _ = notify_rust::Notification::new()
                     .summary("Caffeine Applet Error")
                     .body(&error)
-                    .show();
+                    .show_async();
                 Task::none()
             }
             Message::PopupClosed(id) => {
@@ -127,7 +140,7 @@ impl cosmic::Application for Applet {
                 Task::none()
             }
             Message::PopupToggle => {
-                if let Some(id) = self.popup_id {
+                if let Some(id) = self.popup_id.take() {
                     cosmic::surface::surface_task(cosmic::surface::action::destroy_popup(id))
                 } else {
                     cosmic::surface::surface_task(cosmic::surface::action::app_popup(
@@ -156,7 +169,7 @@ impl cosmic::Application for Applet {
                 Task::none()
             }
             Message::LockTime(minutes) => {
-                if minutes == self.times && self.lock_state == LockState::Locked {
+                if minutes == self.times && self.is_locked() {
                     self.unlock();
                     Task::none()
                 } else {
@@ -253,6 +266,37 @@ impl cosmic::Application for Applet {
 
     fn on_close_requested(&self, id: cosmic::iced::window::Id) -> Option<Self::Message> {
         Some(Message::PopupClosed(id))
+    }
+
+    fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
+        Subscription::run(|| {
+            type Sender = cosmic::iced::futures::channel::mpsc::Sender<Message>;
+            stream::channel::<Message>(100, move |mut output: Sender| async move {
+                let manager = match async {
+                    let conn = zbus::Connection::system().await?;
+                    let manager = logind_zbus::manager::ManagerProxy::new(&conn).await?;
+                    Ok::<_, anyhow::Error>(manager)
+                }
+                .await
+                {
+                    Ok(res) => res,
+                    Err(err) => {
+                        let _ = output.send(Message::AppError(err.to_string())).await;
+                        let _ = pending::<()>().await;
+                        return;
+                    }
+                };
+                if let Ok(mut signal_stream) = manager.receive_prepare_for_sleep().await {
+                    while let Some(signal) = signal_stream.next().await {
+                        if let Ok(args) = signal.args()
+                            && !args.start()
+                        {
+                            let _ = output.send(Message::Unlock).await;
+                        }
+                    }
+                }
+            })
+        })
     }
 }
 
